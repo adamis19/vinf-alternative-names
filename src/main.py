@@ -1,5 +1,7 @@
 import csv
 import re
+import importlib
+import sys
 
 title_count = 0
 redirect_count = 0
@@ -73,9 +75,13 @@ def process_disambiguation(name):
             # if text is shorter than 5 words
             if len(alt_name.split()) < 5:
                 # get text between parenthesis and store
-                name = re.findall("\[\[.*]]", name, re.IGNORECASE)[0][2:-2]
-                alt_names.setdefault(name, []).append(alt_name)
-                disambiguation_alt_names += 1
+                name = re.findall("\[\[.*]]", name, re.IGNORECASE)
+                if len(name) > 0:
+                    name = name[0]
+                    if len(name) > 4:
+                        name = name[2:-2]
+                        alt_names.setdefault(name, []).append(alt_name)
+                        disambiguation_alt_names += 1
 
 
 # function catches  {{redirect2|AD|Before Christ}}  type of redirect
@@ -111,38 +117,86 @@ def get_redirect_title(redirect_title: any):
         redirect_alt_names += 1
 
 
-wikipedia = open('../../data/wikipedia.xml', 'r', encoding="utf-8", errors='ignore')
-wiki_out = open('../wiki_out.xml', 'w', encoding="utf-8", errors='ignore')
-w = csv.writer(open("../alternative_names.csv", "w", encoding="utf-8"), delimiter='\t', lineterminator='\n')
+if __name__ == "__main__":
 
-# 10 000 000 lines is cca 1 GB
-for i in range(50000000):
-    line = wikipedia.readline()
-    find_string(line)
-    wiki_out.write(line)
-    if i % 1000000 == 0:
-        print(i)
+    if len(sys.argv) > 1:
+        if sys.argv[1] == "parse":
 
-print("writing to file...")
+            wikipedia = open('../../data/wikipedia.xml', 'r', encoding="utf-8", errors='ignore')
+            wiki_out = open('../wiki_out.xml', 'w', encoding="utf-8", errors='ignore')
 
-print("titles =", title_count)
-print("redirects =", redirect_count)
-print("number of disambiguation pages = ", disambiguation_count)
+            # 15 000 000 lines is cca 1 GB
+            for i in range(1100000000):
+                line = wikipedia.readline()
+                find_string(line)
+                # wiki_out.write(line)
+                if i % 10000000 == 0:
+                    print(i)
 
-print(len(alt_names), " names ")
-print(disambiguation_alt_names, "alt names from disambig")
-print(redirect_alt_names, "alt names from redirect")
-print(redirect2_alt_names, "alt names from redirect2")
+            print(len(alt_names), "titles ")
+            print(disambiguation_alt_names, "alt names from disambig")
+            print(redirect_alt_names, "alt names from redirect")
+            print(redirect2_alt_names, "alt names from redirect2")
 
-print("finding the most alternative names..")
-maxLength = 0
-for key, val in alt_names.items():
-    w.writerow([key, val])
-    if len(val) > maxLength:
-        maxLength = len(val)
-        name = key
+            print("saving data and creating statistics..")
+            w = csv.writer(open("../alternative_names.csv", "w", encoding="utf-8"), delimiter='\t', lineterminator='\n')
+            alt_names_count = [0 for i in range(200)]
+            too_long = []
+            most_alt_names = []
+            min_max_length = 0
+            for key, val in alt_names.items():
+                w.writerow([key, val])
+                if len(val) >= len(alt_names_count):
+                    too_long.append([len(val), [key], [val]])
+                else:
+                    alt_names_count[len(val)] += 1
 
-print("The most alternative names(", maxLength, "): ", name, alt_names[name])
-wikipedia.close()
-wiki_out.close()
+                if len(most_alt_names) < 30:
+                    most_alt_names.append([len(val), [key], [val]])
+                    most_alt_names.sort(reverse=True)
+                    min_max_length = most_alt_names[-1][0]
+                elif len(val) > min_max_length:
+                    most_alt_names = most_alt_names[:-1]
+                    most_alt_names.append([len(val), [key], [val]])
+                    most_alt_names.sort(reverse=True)
+                    min_max_length = most_alt_names[-1][0]
 
+            statistics = open('../statistics.txt', 'w', encoding="utf-8", errors='ignore')
+
+            statistics.write("Number of alternative names:\n")
+            i = -1
+            for item in alt_names_count:
+                i += 1
+                if item == 0:
+                    item = "-"
+                statistics.write(str(i) + "\t" + str(item) + "\n")
+
+            statistics.write("\nOut of range:\n")
+            too_long.sort()
+            for item in too_long:
+                statistics.write(str(item) + "\n")
+
+            statistics.write("\nMost alternative names:\n")
+            for item in most_alt_names:
+                statistics.write(str(item) + "\n")
+
+            wikipedia.close()
+            wiki_out.close()
+            statistics.close()
+
+            print("done!")
+
+        elif sys.argv[1] == "index":
+
+            importlib.import_module("search").create_index()
+
+        elif sys.argv[1] == "search" and sys.argv[2]:
+
+            importlib.import_module("search").search(' '.join(sys.argv[2:]))
+
+        else:
+
+            print("not recognized argument, use \"parse\", \"index\" or \"search {name}\"")
+
+    else:
+        print("use some argument: \"parse\", \"index\" or \"search {name}\"")
